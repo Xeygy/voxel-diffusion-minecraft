@@ -1,6 +1,9 @@
 torchvision
 accelerate
-diffusers @ git+https://github.com/huggingface/diffusers
 datasets
 transformers
 tensorboard
+
+# diffusers @ git+https://github.com/huggingface/diffusers
+# cd diffusers
+# pip install -e ".[torch]"
