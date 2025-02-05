@@ -1,3 +1,6 @@
 [submodule "diffusers"]
 	path = diffusers
 	url = https://github.com/Xeygy/diffusers
+[submodule "smalldiffusion"]
+	path = smalldiffusion
+	url = https://github.com/yuanchenyang/smalldiffusion.git
