@@ -3,6 +3,7 @@ accelerate
 datasets
 transformers
 tensorboard
+matplotlib
 
 # diffusers @ git+https://github.com/huggingface/diffusers
 # cd diffusers
