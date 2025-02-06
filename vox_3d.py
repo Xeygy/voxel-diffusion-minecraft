@@ -9,7 +9,7 @@ from torch_ema import ExponentialMovingAverage as EMA
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
-
+import time
 
 from smalldiffusion import (
     ScheduleDDPM, samples, training_loop, MappedDataset, Unet3D,
@@ -52,7 +52,7 @@ def visualize_house(vox, im_file=None):
     ax = plt.figure().add_subplot(projection='3d')
     ax.voxels(solid,
               facecolors=vox)
-    plt.savefig(im_file) 
+    plt.savefig(im_file, transparent=True) 
 
 def save_samples(curr_ep, model, schedule, ema, accelerator, sample_batch_size, sdir='saved'):
     # Sample
@@ -63,11 +63,13 @@ def save_samples(curr_ep, model, schedule, ema, accelerator, sample_batch_size, 
         # save_image(img_normalize(make_grid(x0)), f'{sdir}/samples{curr_ep}.png')
         # reshape b, c, x, y, z -> b, x, y, z, c
         x0 = x0.permute(0, 2, 3, 4, 1)
-        visualize_house(x0[0], f'{sdir}/samples{curr_ep}.png')
+        visualize_house(x0[0], f'{sdir}/samples1_{curr_ep}.png')
+        visualize_house(x0[1], f'{sdir}/samples2_{curr_ep}.png')
         torch.save(model.state_dict(), f'{sdir}/checkpoint{curr_ep}.pth')
 
 def main(train_batch_size=32, epochs=300, sample_batch_size=64):
-    NAME = 'vox_3d'
+    timestr = time.strftime("%Y%m%d_%H%M%S")
+    NAME = 'vox_3d_' + timestr
     # Setup
     a = Accelerator()
 
@@ -92,8 +94,9 @@ def main(train_batch_size=32, epochs=300, sample_batch_size=64):
         ema.update()
 
         curr_ep = ns.pbar.n
-        if epoch_save and curr_ep % 10 == 0:
+        if epoch_save and curr_ep % 5 == 1:
             save_samples(curr_ep, model, schedule, ema, a, sample_batch_size, sdir=NAME)
+            print()
             
         if curr_ep == prev_ep:
             epoch_save = False
