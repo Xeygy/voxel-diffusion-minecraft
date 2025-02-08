@@ -18,10 +18,11 @@ def save_samples(curr_ep, model, schedule, ema, accelerator, sample_batch_size, 
     with ema.average_parameters():
         *xt, x0 = samples(model, schedule.sample_sigmas(20), gam=1.6,
                         batchsize=sample_batch_size, accelerator=accelerator)
+        print(x0.min(), x0.max())
         save_dir = f'{sdir}/{curr_ep}'
         os.makedirs(save_dir, exist_ok=True)
-        save_image(img_normalize(make_grid(x0)), f'{save_dir}/samples.png')
-        torch.save(model.state_dict(), f'{save_dir}/checkpoint.pth')
+        # save_image(img_normalize(make_grid(x0)), f'{save_dir}/samples_b.png')
+        # torch.save(model.state_dict(), f'{save_dir}/checkpoint_b.pth')
 
 def main(train_batch_size=1024, epochs=300, sample_batch_size=64):
     # Setup

@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import time
 
 from smalldiffusion import (
-    ScheduleCosine, ScheduleLogLinear, samples, training_loop, MappedDataset, Unet3D, 
-    img_train_transform, img_normalize, Scaled
+    ScheduleDDPM, ScheduleLogLinear, samples, training_loop, MappedDataset, Unet3D, 
+    img_train_transform, img_normalize, Scaled, DiT,
 )
 
 def to_shape(a, shape):
@@ -42,17 +42,23 @@ class VoxDataset(Dataset):
 
 def visualize_house(vox, im_file=None):
     '''
-    expects x, y, z, c
+    expects x, y, z, 1
     '''
     vox = vox.cpu().numpy()
     vox = np.clip(vox, 0, 1)
+    # expand to x, y, z, 4 by copying the last channel
+    vox = np.repeat(vox, 4, axis=-1)
     solid = vox[:, :, :, -1] != 0
     vox[:, :, :, -1] = 0.7 * (vox[:, :, :, -1] > 0)
 
     ax = plt.figure().add_subplot(projection='3d')
+    ax.set_xlim(0, 32)
+    ax.set_ylim(0, 32)
+    ax.set_zlim(0, 32)
     ax.voxels(solid,
               facecolors=vox)
     plt.savefig(im_file, transparent=True) 
+    plt.close()
 
 def save_samples(curr_ep, model, schedule, ema, accelerator, sample_batch_size, sdir='saved'):
     # Sample
@@ -61,53 +67,56 @@ def save_samples(curr_ep, model, schedule, ema, accelerator, sample_batch_size, 
                         batchsize=sample_batch_size, accelerator=accelerator)
         os.makedirs(sdir, exist_ok=True)
         print(x0.min(), x0.max())
-        # reshape b, c, x, y, z -> b, x, y, z, c
-        x0 = x0.permute(0, 2, 3, 4, 1)
+        # reshape b, x, y, z -> b, 1, x, y, z
+        x0 = x0.unsqueeze(-1)
         # from (-1, 1) to (0, 1)
         x0 = (x0 + 1) / 2
-        visualize_house(x0[0], f'{sdir}/samples1_{curr_ep}.png')
-        visualize_house(x0[1], f'{sdir}/samples2_{curr_ep}.png')
-        torch.save(model.state_dict(), f'{sdir}/checkpoint{curr_ep}.pth')
+        print(x0.shape)
+        visualize_house(x0[0], f'{sdir}/samples_{curr_ep}_1.png')
+        visualize_house(x0[1], f'{sdir}/samples_{curr_ep}_2.png')
+        torch.save(model.state_dict(), f'{sdir}/checkpoint_{curr_ep}.pth')
 
 def main(train_batch_size=32, epochs=300, sample_batch_size=64):
     timestr = time.strftime("%Y%m%d_%H%M%S")
-    NAME = 'vox_3d_' + timestr
+    NAME = 'cube' + timestr
 
     # Setup
     a = Accelerator()
 
-    houses_np = np.load('data/2104_houses_sub_30.npy')
-    houses_np = to_shape(houses_np, (2104, 32, 32, 32, 4))
-    # b, x, y, z, c -> b, c, x, y, z
-    houses_np = np.transpose(houses_np, (0, 4, 1, 2, 3))
-    houses_np = houses_np.astype(np.float32)
-    # from (0, 1) to (-1, 1)
-    houses_np = (houses_np * 2) - 1
-    print(houses_np.min(), houses_np.max())
+    # 32 x 32 x 32 with a 16x16x16 cube of a random color in the center
+    DSIZE = 2000
+    cubes = torch.zeros(DSIZE, 1, 32, 32, 32)
+    for i in range(DSIZE):
+        x = torch.randint(4, 12, (3,))
+        cubes[i, :, x[0]:x[0]+16, x[1]:x[1]+16, x[2]:x[2]+16] = 1
+    os.makedirs(NAME, exist_ok=True)
+    cubes = cubes * 2 - 1
 
-    dataset = VoxDataset(houses_np)
-    loader = DataLoader(dataset, batch_size=train_batch_size, shuffle=True)
+    # flatten the z dimension into the channel dimension
+    # b, 1, x, y, z -> b, x, y, c
+    cubes = cubes.squeeze(1)
 
-    schedule =  ScheduleLogLinear(sigma_min=0.01, sigma_max=20, N=800) #ScheduleCosine(max_beta=0.02, N=1000)
-    model =  Unet3D(in_dim=32, in_ch=4, out_ch=4, ch=64)
+    # test visualization
+    sample = cubes[0].unsqueeze(-1)
+    sample = (sample + 1) / 2
+    visualize_house(sample, f'{NAME}/cube.png')
+    loader = DataLoader(cubes, batch_size=train_batch_size, shuffle=True)
 
-    # sched tensor([2.0291e+04, 1.2807e+01, 6.3646e+00, 4.1995e+00, 3.1037e+00, 2.4354e+00,
-    #     1.9807e+00, 1.6478e+00, 1.3908e+00, 1.1841e+00, 1.0124e+00, 8.6585e-01,
-    #     7.3787e-01, 6.2383e-01, 5.2038e-01, 4.2499e-01, 3.3572e-01, 2.5099e-01,
-    #     1.6944e-01, 8.9761e-02, 6.4316e-03])
-    print("sched", schedule.sample_sigmas(20))
+    print(cubes.shape)
+
+    schedule = ScheduleDDPM(beta_start=0.0001, beta_end=0.02, N=1000)
+    model = DiT(in_dim=32, channels=32, patch_size=2, depth=12, head_dim=64, num_heads=6, mlp_ratio=4.0)
 
     # Train
-    ema = EMA(model.parameters(), decay=0.999)
+    ema = EMA(model.parameters(), decay=0.99)
     ema.to(a.device)
-
     epoch_save, prev_ep = True, 0
     for ns in training_loop(loader, model, schedule, epochs=epochs, lr=1e-3, accelerator=a):
-        ns.pbar.set_postfix(loss={ns.loss.item():.5})
+        ns.pbar.set_description(f'Loss={ns.loss.item():.5}')
         ema.update()
 
         curr_ep = ns.pbar.n
-        if epoch_save and curr_ep % 5 == 1:
+        if epoch_save and curr_ep % 10 == 1:
             save_samples(curr_ep, model, schedule, ema, a, sample_batch_size, sdir=NAME)
             print()
             
@@ -116,8 +125,8 @@ def main(train_batch_size=32, epochs=300, sample_batch_size=64):
         else:
             epoch_save = True
         prev_ep = curr_ep
-    
-    save_samples(curr_ep, model, schedule, ema, a, sample_batch_size, sdir=NAME)
+
+
 
 if __name__=='__main__':
     main()
