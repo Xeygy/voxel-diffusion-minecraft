@@ -95,7 +95,7 @@ def from_mvi(mvi):
         cxyz[:, :, :, i] = mvi[:, row*32:(row+1)*32, col*32:(col+1)*32]
     return cxyz
 
-def main(train_batch_size=8, epochs=300, sample_batch_size=2):
+def main(train_batch_size=4, epochs=300, sample_batch_size=2):
     timestr = time.strftime("%Y%m%d_%H%M%S")
     NAME = 'cubemvi' + timestr
 
@@ -135,7 +135,7 @@ def main(train_batch_size=8, epochs=300, sample_batch_size=2):
     loader = DataLoader(slices, batch_size=train_batch_size, shuffle=True)
 
     schedule = ScheduleDDPM(beta_start=0.0001, beta_end=0.02, N=1000)
-    model = DiT(in_dim=192, channels=4, patch_size=4, depth=12, head_dim=64, num_heads=12, mlp_ratio=4.0)
+    model = DiT(in_dim=192, channels=4, patch_size=2, depth=12, head_dim=64, num_heads=12, mlp_ratio=4.0)
 
     # Train
     ema = EMA(model.parameters(), decay=0.99)

@@ -42,12 +42,11 @@ class VoxDataset(Dataset):
 
 def visualize_house(vox, im_file=None):
     '''
-    expects x, y, z, 1
+    expects x, y, z, 4
     '''
     vox = vox.cpu().numpy()
     vox = np.clip(vox, 0, 1)
     # expand to x, y, z, 4 by copying the last channel
-    vox = np.repeat(vox, 4, axis=-1)
     solid = vox[:, :, :, -1] != 0
     vox[:, :, :, -1] = 0.7 * (vox[:, :, :, -1] > 0)
 
@@ -67,8 +66,11 @@ def save_samples(curr_ep, model, schedule, ema, accelerator, sample_batch_size, 
                         batchsize=sample_batch_size, accelerator=accelerator)
         os.makedirs(sdir, exist_ok=True)
         print(x0.min(), x0.max())
-        # reshape b, x, y, z -> b, 1, x, y, z
-        x0 = x0.unsqueeze(-1)
+
+        # reshape b, c, x, y -> b, 4, x, y, z
+        x0 = x0.permute(0, 2, 3, 1)
+        x0 = x0.reshape(sample_batch_size, 32, 32, 32, 4)
+
         # from (-1, 1) to (0, 1)
         x0 = (x0 + 1) / 2
         print(x0.shape)
@@ -85,27 +87,32 @@ def main(train_batch_size=32, epochs=300, sample_batch_size=64):
 
     # 32 x 32 x 32 with a 16x16x16 cube of a random color in the center
     DSIZE = 2000
-    cubes = torch.zeros(DSIZE, 1, 32, 32, 32)
+    cubes = torch.zeros(DSIZE, 4, 32, 32, 32)
     for i in range(DSIZE):
         x = torch.randint(4, 12, (3,))
-        cubes[i, :, x[0]:x[0]+16, x[1]:x[1]+16, x[2]:x[2]+16] = 1
+        color = torch.rand(4)
+        color[3] = 1
+        color = color.unsqueeze(1).unsqueeze(2).unsqueeze(3)
+        cubes[i, :, x[0]:x[0]+16, x[1]:x[1]+16, x[2]:x[2]+16] = color
     os.makedirs(NAME, exist_ok=True)
     cubes = cubes * 2 - 1
 
     # flatten the z dimension into the channel dimension
-    # b, 1, x, y, z -> b, x, y, c
-    cubes = cubes.squeeze(1)
+    # b, 4, x, y, z -> b, 4*z, x, y 
+    cubes = cubes.permute(0, 1, 4, 2, 3)
+    cubes = cubes.reshape(DSIZE, 4*32, 32, 32)
 
     # test visualization
-    sample = cubes[0].unsqueeze(-1)
+    sample = cubes[0]
+    # reshape c, x, y -> 4, x, y, z
+    sample = sample.reshape(4, 32, 32, 32)
+    sample = sample.permute(1, 2, 3, 0) 
     sample = (sample + 1) / 2
     visualize_house(sample, f'{NAME}/cube.png')
     loader = DataLoader(cubes, batch_size=train_batch_size, shuffle=True)
 
-    print(cubes.shape)
-
-    schedule = ScheduleDDPM(beta_start=0.0001, beta_end=0.02, N=1000)
-    model = DiT(in_dim=32, channels=32, patch_size=2, depth=12, head_dim=64, num_heads=6, mlp_ratio=4.0)
+    schedule = ScheduleDDPM(beta_start=0.0001, beta_end=0.5, N=1000)
+    model = DiT(in_dim=32, channels=128, patch_size=2, depth=12, head_dim=64, num_heads=6, mlp_ratio=4.0)
 
     # Train
     ema = EMA(model.parameters(), decay=0.99)
