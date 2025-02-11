@@ -16,7 +16,6 @@ Try out voxel diffusion with `accelerate launch vox_3d.py`
 Edit and add models to `smalldiffusion/src/smalldiffusion/`
 
 ## Notes
-- vox_3d is the testbed for broken 3d unet stuff
-- square/squar_dit is the testbed for generating squares via diffusion
-- cube/cube_eval is the testbed for generating cubes via diffusion
-- gif_script generates gifs from a directory of images
+- vocks.py is the testbed for 3d unet stuff
+- old_cube_code/ contains a lot of the old cube and square test code
+- gif_script.py generates gifs from a directory of images
