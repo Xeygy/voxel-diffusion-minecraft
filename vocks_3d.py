@@ -73,35 +73,37 @@ def save_samples(curr_ep, model, schedule, ema, accelerator, sample_batch_size, 
             visualize_house(x0[i], f'{sdir}/samples_{curr_ep}_{i}.png')
         torch.save(model.state_dict(), f'{sdir}/checkpoint{curr_ep}.pth')
 
-def main(train_batch_size=32, epochs=300, sample_batch_size=64):
+def main(train_batch_size=32, epochs=500, sample_batch_size=64):
     timestr = time.strftime("%Y%m%d_%H%M%S")
-    NAME = '3d_cube_' + timestr
+    NAME = 'vocks_' + timestr
 
     # Setup
     a = Accelerator()
 
-    # 16x16x16 with a 8x8x8 cube of a random color in the center
-    DSIZE = 2000
-    BIG_DIM, SM_DIM = 16, 8
-    cubes = torch.zeros(DSIZE, 4, BIG_DIM, BIG_DIM, BIG_DIM)
-    for i in range(DSIZE):
-        x = torch.randint(0, SM_DIM, (3,))
-        color = torch.rand(4)
-        color[3] = 1
-        color = color.unsqueeze(1).unsqueeze(2).unsqueeze(3)
-        cubes[i, :, x[0]:x[0]+SM_DIM, x[1]:x[1]+SM_DIM, x[2]:x[2]+SM_DIM] = color
-    # b, c, x, y, z
+    houses_np = np.load('data/2104_houses_sub_30.npy')
+    houses_np = to_shape(houses_np, (2104, 32, 32, 32, 4))
+    # b, x, y, z, c -> b, c, x, y, z
+    houses_np = np.transpose(houses_np, (0, 4, 1, 2, 3))
+    houses_np = houses_np.astype(np.float32)
+    # from (0, 1) to (-1, 1)
+    houses_np = (houses_np * 2) - 1
+    print(houses_np.min(), houses_np.max())
+    # crop to 16x16x16
+    houses_np = houses_np[:, :, 8:24, 8:24, 0:16]
+    # houses_np = houses_np[:, :, 12:20, 12:20, 0:8]
+    houses_torch = torch.from_numpy(houses_np)
     os.makedirs(NAME, exist_ok=True)
-    cubes = cubes * 2 - 1
+    houses_torch = houses_torch * 2 - 1
 
-    visualize_house((cubes[0].permute(1,2,3,0) + 1) / 2, f'{NAME}/sample.png')
+    visualize_house((houses_torch[11].permute(1,2,3,0) + 1) / 2, f'{NAME}/sample1.png')
+    visualize_house((houses_torch[51].permute(1,2,3,0) + 1) / 2, f'{NAME}/sample2.png')
+    visualize_house((houses_torch[101].permute(1,2,3,0) + 1) / 2, f'{NAME}/sample3.png')
 
-    dataset = VoxDataset(cubes)
+
+    dataset = VoxDataset(houses_torch)
     loader = DataLoader(dataset, batch_size=train_batch_size, shuffle=True)
-    # TODO: what are these params?
-    # run on larger scale
     schedule = ScheduleLogLinear(sigma_min=0.01, sigma_max=20, N=20) #ScheduleCosine(max_beta=0.02, N=1000)
-    model = Unet3D(in_dim=BIG_DIM, in_ch=4, out_ch=4, ch=64)
+    model = Unet3D(in_dim=16, in_ch=4, out_ch=4, ch=64)
 
     print("sched", schedule.sample_sigmas(20))
 
@@ -115,7 +117,7 @@ def main(train_batch_size=32, epochs=300, sample_batch_size=64):
         ema.update()
 
         curr_ep = ns.pbar.n
-        if epoch_save and curr_ep % 3 == 1:
+        if epoch_save and curr_ep % 8 == 1:
             save_samples(curr_ep, model, schedule, ema, a, sample_batch_size, sdir=NAME)
             print()
             
