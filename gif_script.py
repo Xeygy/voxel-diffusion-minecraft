@@ -2,6 +2,8 @@ from PIL import Image
 import os
 import argparse
 
+# for gif generation from a directory of pngs
+
 def to_gif(paths, name='output'):
     im_list = []
     for path in paths:
@@ -31,7 +33,7 @@ def giffed_single(dir_path):
     paths.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
     to_gif(paths, "monocube")
     
-def giffed_multi(dir_path, gif_name='multicube'):
+def giffed_multi(dir_path, gif_name='multicube', duration=200, resize_width=None):
     '''
     expects pngs of the form
     xxxx_n_s.png
@@ -66,14 +68,16 @@ def giffed_multi(dir_path, gif_name='multicube'):
             im = Image.open(im_path)
             grid.paste(im, (width * (i % sqrtn), height * (i // sqrtn)))
         ims.append(grid)
-    to_gif_imlist(ims, gif_name, 200)
+    to_gif_imlist(ims, gif_name, duration, resize_width)
     
 if __name__ == '__main__':
     # add arg for directory
     parser = argparse.ArgumentParser()
     parser.add_argument('dir', type=str, help='directory containing pngs')
-    parser.add_argument('name', type=str, help='name of gif', )
+    parser.add_argument('name', type=str, help='name of gif')
+    parser.add_argument('--res', type=int, help='resize width of output', default=None)
+    parser.add_argument('--duration', type=int, help='frame duration (ms)', default=200)
     args = parser.parse_args()
-    giffed_multi(args.dir, args.name)
+    giffed_multi(args.dir, args.name, args.duration, args.res)
     
     
