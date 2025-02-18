@@ -1,1 +1,4 @@
 venv/
+out/
+vocks_2*
+3d_cube_*
