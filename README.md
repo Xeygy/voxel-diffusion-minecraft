@@ -6,7 +6,7 @@ pip install -r requirements.txt
 cd smalldiffusion
 pip install -e .
 ```
-Put voxel data in `data/`.
+Put [voxel data](https://www.kaggle.com/datasets/xiuyuanqiu/sub-30-voxel-houses-in-numpy) in `data/`.
  
 ## Run
 Run fashion mnist diffusion with `accelerate launch smol_test.py`.
